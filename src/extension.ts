@@ -293,7 +293,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 const emojiMap: Record<string, string> = {};
                 commitTypes.forEach(ct => {
                     if (ct.key && ct.icon) {
-                        emojiMap[ct.key] = ct.icon.trim().charAt(0);
+                        emojiMap[ct.key] = ct.icon.trim();
                     }
                 });
 
