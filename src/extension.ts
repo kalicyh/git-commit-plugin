@@ -1,7 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { GitExtension } from './types/git';
+import { GitExtension, API, Repository } from './types/git';
 import GetCommitTypes, { CommitType } from './config/commit-type';
 import {
     GetCommitDetailType,
@@ -251,21 +251,79 @@ export async function activate(context: vscode.ExtensionContext) {
     //点击图标触发快捷选项 Click the icon to trigger shortcut options
     let disposable = vscode.commands.registerCommand(
         'extension.showGitCommit',
-        (uri?) => {
-            if (uri) {
-                //如果有多个repo 寻找当前的 进行填充 If there are multiple repos looking for the current to populate
-                repo = gitExtension.getAPI(1).repositories.find(repo => {
-                    const uriRoot = uri._rootUri ? uri._rootUri : uri.rootUri;
-                    return repo.rootUri.path === uriRoot?.path;
-                });
+        async (uri?: vscode.Uri) => {
+            // 获取激活的 git 扩展
+            const gitExtension = vscode.extensions.getExtension<GitExtension>('vscode.git')?.exports;
+            if (!gitExtension) {
+                vscode.window.showErrorMessage('Git 扩展未激活');
+                return;
             }
+
+            // 获取 Git API
+            const api: API = gitExtension.getAPI(1);
+            if (!api) {
+                vscode.window.showErrorMessage('无法获取 Git API');
+                return;
+            }
+
+            // 选第一个仓库作为默认
+            let repo: Repository | undefined = api.repositories[0];
+            if (!repo) {
+                vscode.window.showErrorMessage('未找到 Git 仓库');
+                return;
+            }
+
+            // 如果有 uri，找到对应的仓库
+            if (uri) {
+                const uriRoot = (uri as any)._rootUri ?? uri;
+                const foundRepo = api.repositories.find(r => r.rootUri.path === uriRoot.path);
+                if (foundRepo) {
+                    repo = foundRepo;
+                }
+            }
+
+            // 取当前提交输入框内容（去空格）
+            const currentInput: string = repo.inputBox.value?.trim() ?? '';
+
+            if (currentInput.length > 0) {
+            // 从配置中获取所有提交类型，包括 icon
+                const commitTypes: CommitType[] = GetCommitTypes();
+
+                // 构造 prefix -> emoji 映射，取 icon 字符
+                const emojiMap: Record<string, string> = {};
+                commitTypes.forEach(ct => {
+                    if (ct.key && ct.icon) {
+                        emojiMap[ct.key] = ct.icon.trim().charAt(0);
+                    }
+                });
+
+                // 遍历映射，匹配输入框前缀
+                for (const prefix in emojiMap) {
+                    const emoji = emojiMap[prefix];
+                    const regex = new RegExp(`^${prefix}`, 'i');
+                    // 如果输入以 prefix 开头且尚未带 emoji，则添加 emoji
+                    if (regex.test(currentInput) && !currentInput.startsWith(emoji)) {
+                        repo.inputBox.value = `${emoji} ${currentInput}`;
+                        vscode.window.showInformationMessage(`已添加表情：${emoji}`);
+                        return;
+                    }
+                }
+
+                // 如果已有表情或不匹配，提示无需更改
+                vscode.window.showInformationMessage('已存在提交信息，无需更改');
+                return;
+            }
+
+            // 输入为空，走原始交互流程
             if (FillSubjectWithCurrent) {
                 const message = repo.inputBox.value;
                 setMessageInput('subject', message);
             }
+
             startMessageInput();
         },
     );
+
     context.subscriptions.push(disposable);
 }
 
